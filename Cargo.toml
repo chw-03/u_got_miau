@@ -1,0 +1,18 @@
+[package]
+name = "u_got_miau"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+kuma-client = "*"
+
+reqwest = { version = "*", default-features = false, features = [
+    "blocking",
+    "rustls",
+    "json",
+] }
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"
+tokio = { version = "*", features = ["macros", "rt-multi-thread"] }
+openssl = { version = "*", features = ["vendored"] }
+yaml_serde = "*"
