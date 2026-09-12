@@ -21,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret = read_secret();
     let api_link = secret.p_addr.clone();
 
-    let mut a = portainer::get_portainer(&api_link, secret.p_auth.clone()).await?;
-    a.dedup();
+    let mut container_list = portainer::get_portainer(&api_link, secret.p_auth.clone()).await?;
+    container_list.dedup();
 
     let kuma = Client::connect(Config {
         url: Url::parse(&secret.k_addr).expect("Invalid URL"),
@@ -39,8 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("failed to fetch list of existing monitors")
         .iter()
         .map(|(_, v)| match v {
-            kuma_client::models::monitor::Monitor::Keyword { value } => value.url.clone().unwrap(),
-            kuma_client::models::monitor::Monitor::Http { value } => value.url.clone().unwrap(),
+            kuma_client::models::monitor::Monitor::Keyword { value } => value.url.clone().expect("err kuma keyword"),
+            kuma_client::models::monitor::Monitor::Http { value } => value.url.clone().expect("err kuma http"),
             _ => "".to_string(),
         })
         .collect::<Vec<String>>();
@@ -49,11 +49,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut saved_entries = Vec::new();
 
-    for (name, address) in a {
+    for (name, address) in container_list {
         let collector = Collector::Ram(Vec::new());
 
         let request = Request::builder()
-            .uri(address)
+            .uri(&address)
             .method(Method::GET)
             .body(None)
             .unwrap();
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .blocking()
             .perform();
 
-        if !existing_monitors.contains(&address) || response.is_ok() {
+        if !existing_monitors.contains(&address) && response.is_ok() {
             to_add_to_homepage(&name, &address, &mut saved_entries);
             add_to_kuma(&kuma, &name, address).await;
         }
@@ -86,8 +86,6 @@ async fn add_to_kuma(kuma: &Client, name: &String, address: String) {
     .await
     .expect("Failed to add monitor");
 }
-
-
 
 fn to_add_to_homepage(name: &String, address: &str, saved_entries: &mut Vec<String>) {
     let mut abbr = name.clone();
