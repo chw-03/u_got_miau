@@ -7,7 +7,6 @@ use crate::SECRET;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Secret {
-    pub test: String,
     pub k_addr: String,
     pub k_un: String,
     pub k_pw: String,

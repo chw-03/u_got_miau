@@ -104,8 +104,8 @@ pub struct Containers {
     pub network_settings: u8,
     #[serde(rename = "Ports")]
     pub ports: Vec<Ports>,
-    #[serde(rename = "State", skip)]
-    pub state: u8,
+    #[serde(rename = "State")]
+    pub state: String,
     #[serde(rename = "Status", skip)]
     pub status: u8,
     #[serde(rename = "SizeRw", skip)]
@@ -151,10 +151,8 @@ pub async fn get_portainer(
 
         let mut endpoint_url = Url::parse(&format!("http://{}", endpoint.public_url))?;
 
-        let containers_api = endpoint_list.join(&format!(
-            "endpoints/{}/docker/containers/json",
-            endpoint.id
-        ))?;
+        let containers_api =
+            endpoint_list.join(&format!("endpoints/{}/docker/containers/json", endpoint.id))?;
 
         let response = client
             .get(containers_api)
@@ -163,6 +161,9 @@ pub async fn get_portainer(
 
         let containers: Vec<Containers> = response.json()?;
         for container in containers {
+            if container.state.contains("stopped") {
+                continue;
+            }
             for port in container.ports {
                 if let Some(port_num) = port.public_port {
                     endpoint_url

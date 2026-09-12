@@ -7,6 +7,8 @@ use std::process::Command;
 use u_got_miau::portainer;
 use u_got_miau::secret_parser::*;
 use yaml_serde;
+use curl_http_client::*;
+use http::{Method, Request};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Port {
@@ -48,7 +50,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut saved_entries = Vec::new();
 
     for (name, address) in a {
-        if !existing_monitors.contains(&address) {
+        let collector = Collector::Ram(Vec::new());
+
+        let request = Request::builder()
+            .uri(address)
+            .method(Method::GET)
+            .body(None)
+            .unwrap();
+
+        let response = HttpClient::new(collector)
+            .request(request).unwrap()
+            .blocking()
+            .perform();
+
+        if !existing_monitors.contains(&address) || response.is_ok() {
             to_add_to_homepage(&name, &address, &mut saved_entries);
             add_to_kuma(&kuma, &name, address).await;
         }
@@ -72,6 +87,8 @@ async fn add_to_kuma(kuma: &Client, name: &String, address: String) {
     .expect("Failed to add monitor");
 }
 
+
+
 fn to_add_to_homepage(name: &String, address: &str, saved_entries: &mut Vec<String>) {
     let mut abbr = name.clone();
     let _ = abbr.split_off(2);
@@ -84,14 +101,35 @@ fn to_add_to_homepage(name: &String, address: &str, saved_entries: &mut Vec<Stri
     }
     
     let mut mod_name = name.clone();
+    let mut icon = format!("abbr: {abbr}");
 
     if inst_counter != 0 {
         mod_name.push_str(&format!("{inst_counter}"));
     }
+    
+    let collector = Collector::Ram(Vec::new());
+
+    let request = Request::builder()
+        .uri(format!("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{mod_name}.svg"))
+        .method(Method::GET)
+        .body(None)
+        .unwrap();
+
+    let response = HttpClient::new(collector)
+        .request(request).unwrap()
+        .blocking()
+        .perform()
+        .unwrap();
+
+    let resp = response.headers().get("content-type").expect("cant get type").to_str().expect("parse failed");
+
+    if resp.contains("image")  {
+        icon = format!("icon: {mod_name}");
+    }
 
     let data = format!(
         "\n  - {mod_name}:
-    - abbr: {abbr}
+    - {icon}
       href: {address}"
     );
     saved_entries.push(data)
