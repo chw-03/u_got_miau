@@ -1,18 +1,21 @@
+use curl_http_client::*;
+use http::{Method, Request};
 use kuma_client::{Client, Config, Url, monitor::MonitorHttp};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{File, write};
 use std::io::{BufReader, Write};
 use std::process::Command;
+use std::time::Duration;
 use u_got_miau::portainer;
 use u_got_miau::secret_parser::*;
 use yaml_serde;
-use curl_http_client::*;
-use http::{Method, Request};
+use regex::Regex;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Port {
-    pub abbr: String,
+    pub abbr: Option<String>,
+    pub icon: Option<String>,
     pub href: String,
 }
 
@@ -39,17 +42,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .expect("failed to fetch list of existing monitors")
         .iter()
         .map(|(_, v)| match v {
-            kuma_client::models::monitor::Monitor::Keyword { value } => value.url.clone().expect("err kuma keyword"),
-            kuma_client::models::monitor::Monitor::Http { value } => value.url.clone().expect("err kuma http"),
+            kuma_client::models::monitor::Monitor::Keyword { value } => {
+                value.url.clone().expect("err kuma keyword")
+            }
+            kuma_client::models::monitor::Monitor::Http { value } => {
+                value.url.clone().expect("err kuma http")
+            }
             _ => "".to_string(),
         })
         .collect::<Vec<String>>();
 
     existing_monitors.dedup();
 
-    let mut saved_entries = Vec::new();
+    let mut saved_entries: Vec<String> = Vec::new();
 
     for (name, address) in container_list {
+        let mut inst_counter: u8 = 0;
+        for entry in saved_entries.iter() {
+            if entry.contains(&name) {
+                inst_counter += 1;
+            }
+        }
+
+        let mut mod_name = name.clone();
+        if inst_counter != 0 {
+            mod_name.push_str(&format!("{inst_counter}"));
+        }
+
         let collector = Collector::Ram(Vec::new());
 
         let request = Request::builder()
@@ -59,13 +78,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         let response = HttpClient::new(collector)
-            .request(request).unwrap()
+            .timeout(Duration::from_secs(30))
+            .expect("timed out")
+            .request(request)
+            .unwrap()
             .blocking()
             .perform();
 
         if !existing_monitors.contains(&address) && response.is_ok() {
-            to_add_to_homepage(&name, &address, &mut saved_entries);
-            add_to_kuma(&kuma, &name, address).await;
+            to_add_to_homepage(&name, &mod_name, &address, &mut saved_entries);
+            add_to_kuma(&kuma, &mod_name, address).await;
         }
     }
 
@@ -87,42 +109,46 @@ async fn add_to_kuma(kuma: &Client, name: &String, address: String) {
     .expect("Failed to add monitor");
 }
 
-fn to_add_to_homepage(name: &String, address: &str, saved_entries: &mut Vec<String>) {
+fn to_add_to_homepage(
+    name: &String,
+    mod_name: &String,
+    address: &str,
+    saved_entries: &mut Vec<String>,
+) {
     let mut abbr = name.clone();
     let _ = abbr.split_off(2);
 
-    let mut inst_counter: u8 = 0;
-    for entry in saved_entries.iter() {
-        if entry.contains(name) {
-            inst_counter += 1;
-        }
-    }
-    
-    let mut mod_name = name.clone();
-    let mut icon = format!("abbr: {abbr}");
+    let re = Regex::new(r"^[^a-zA-Z]*[a-zA-Z]+").unwrap();
+    let Some(caps) = re.captures(name) else { return };
+    let clean_name = &caps[0];
 
-    if inst_counter != 0 {
-        mod_name.push_str(&format!("{inst_counter}"));
-    }
-    
+    let mut icon = format!("abbr: {abbr}");
     let collector = Collector::Ram(Vec::new());
 
     let request = Request::builder()
-        .uri(format!("https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{mod_name}.svg"))
+        .uri(format!(
+            "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{clean_name}.svg"
+        ))
         .method(Method::GET)
         .body(None)
         .unwrap();
 
     let response = HttpClient::new(collector)
-        .request(request).unwrap()
+        .request(request)
+        .unwrap()
         .blocking()
         .perform()
         .unwrap();
 
-    let resp = response.headers().get("content-type").expect("cant get type").to_str().expect("parse failed");
+    let resp = response
+        .headers()
+        .get("content-type")
+        .expect("cant get type")
+        .to_str()
+        .expect("parse failed");
 
-    if resp.contains("image")  {
-        icon = format!("icon: {mod_name}");
+    if resp.contains("image") {
+        icon = format!("icon: {clean_name}");
     }
 
     let data = format!(
