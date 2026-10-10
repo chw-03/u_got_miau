@@ -75,13 +75,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .uri(&address)
             .method(Method::GET)
             .body(None)
-            .unwrap();
+            .expect("request to container addr failed");
 
         let response = HttpClient::new(collector)
             .timeout(Duration::from_secs(30))
             .expect("timed out")
             .request(request)
-            .unwrap()
+            .expect("hppt client to container addr failed")
             .blocking()
             .perform();
 
@@ -118,7 +118,7 @@ fn to_add_to_homepage(
     let mut abbr = name.clone();
     let _ = abbr.split_off(2);
 
-    let re = Regex::new(r"^[^a-zA-Z]*[a-zA-Z]+").unwrap();
+    let re = Regex::new(r"^[^a-zA-Z]*[a-zA-Z]+").expect("regex failed what the faaaah");
     let Some(caps) = re.captures(name) else { return };
     let clean_name = &caps[0];
 
@@ -131,14 +131,14 @@ fn to_add_to_homepage(
         ))
         .method(Method::GET)
         .body(None)
-        .unwrap();
+        .expect("request icon failed");
 
     let response = HttpClient::new(collector)
         .request(request)
-        .unwrap()
+        .expect("http client to icon failed")
         .blocking()
         .perform()
-        .unwrap();
+        .expect("http client collect failed");
 
     let resp = response
         .headers()
