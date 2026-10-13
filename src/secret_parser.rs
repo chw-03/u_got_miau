@@ -5,6 +5,7 @@ use std::io::BufReader;
 
 use crate::SECRET;
 
+//Handles parsing through secret.json and extracting the information.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Secret {
     pub k_addr: String,
@@ -13,19 +14,21 @@ pub struct Secret {
     pub hp_path: String,
     pub p_addr: String,
     pub p_auth: String,
-    pub neutrino: String,
+    pub pi_instance: String,
     pub key: String,
 }
 
+//Reads the file from location specified in lib.rs
 pub fn read_secret() -> Secret {
     let file = File::open(SECRET).expect("can't open file");
     let reader = BufReader::new(file);
     let mut contents: Secret = serde_json::from_reader(reader).expect("can't read file");
 
     let k_pw = format!("{:?}", contents.k_pw);
+
+    //This fixed a weird bug where UptimeKuma wouldn't accept the password
     let mut cleaned_k_pw = k_pw.strip_prefix("\"").expect("parse error");
     cleaned_k_pw = cleaned_k_pw.strip_suffix("\"").expect("parse error");
     contents.k_pw = cleaned_k_pw.to_string();
-
     contents
 }

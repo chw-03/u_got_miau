@@ -2,6 +2,8 @@ use reqwest::blocking::Client;
 use reqwest::{self, Url};
 use serde::Deserialize;
 
+//All these structs handle deserializing data pulled from Portainer API
+//Note that a lot of fields are skipped because I didn't need the info
 #[derive(Debug, Deserialize, Default)]
 pub struct Endpoints {
     #[serde(rename = "AMTDeviceGUID", skip)]
@@ -126,6 +128,7 @@ pub struct Ports {
     pub port_type: u8,
 }
 
+//Connect to Portainer and fetch info from containers with a public url
 pub async fn get_portainer(
     link: &str,
     auth: String,
@@ -145,7 +148,10 @@ pub async fn get_portainer(
 
     let mut ports: Vec<(String, String)> = Vec::new();
     for endpoint in endpoints.iter() {
-        if endpoint.public_url.is_empty() || endpoint.id == 7 {
+        //endpoint.id == 7 is here because in my case it connects to an Edge environment that is intentionally excluded
+        //if endpoint.public_url.is_empty() || endpoint.id == 7 {
+
+        if endpoint.public_url.is_empty() {
             continue;
         }
 

@@ -12,6 +12,7 @@ use u_got_miau::secret_parser::*;
 use yaml_serde;
 use regex::Regex;
 
+//Struct to handle deserializing data pulled from Kuma API
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Port {
     pub abbr: Option<String>,
@@ -19,6 +20,8 @@ pub struct Port {
     pub href: String,
 }
 
+
+//main process, use cronjob to run it every hour
 #[tokio::main()]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let secret = read_secret();
@@ -96,6 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+//Add new monitor to UptimeKuma by passing in the client
 async fn add_to_kuma(kuma: &Client, name: &String, address: String) {
     kuma.add_monitor(MonitorHttp {
         name: Some(name.to_string()),
@@ -109,22 +113,27 @@ async fn add_to_kuma(kuma: &Client, name: &String, address: String) {
     .expect("Failed to add monitor");
 }
 
+//Add new bookmarks to a Vec that will later be populated into bookmarks.yaml
 fn to_add_to_homepage(
     name: &String,
     mod_name: &String,
     address: &str,
     saved_entries: &mut Vec<String>,
 ) {
+    //makes abbreviation from first 2 letters of the container name
     let mut abbr = name.clone();
     let _ = abbr.split_off(2);
 
-    let re = Regex::new(r"^[^a-zA-Z]*[a-zA-Z]+").expect("regex failed what the faaaah");
+    //cleans the container name so hopefully can find a icon from Homepage's integrated icon source
+    let re = Regex::new(r"^[^a-zA-Z]*[a-zA-Z]+").expect("regex failed");
     let Some(caps) = re.captures(name) else { return };
     let clean_name = &caps[0];
 
+    //logic will use the abbreviation unless icon found
     let mut icon = format!("abbr: {abbr}");
     let collector = Collector::Ram(Vec::new());
 
+    //aforementioned Homepage's icon source, check if such icon exists
     let request = Request::builder()
         .uri(format!(
             "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/{clean_name}.svg"
@@ -147,10 +156,12 @@ fn to_add_to_homepage(
         .to_str()
         .expect("parse failed");
 
+    //icon found, use it instead!
     if resp.contains("image") {
         icon = format!("icon: {clean_name}");
     }
 
+    //format text to add to bookmarks.yaml later
     let data = format!(
         "\n  - {mod_name}:
     - {icon}
@@ -160,9 +171,10 @@ fn to_add_to_homepage(
 }
 
 pub fn homepage_sorter(saved_entries: Vec<String>) {
+    //scp the existing bookmarks.yaml from that other Pi that hosts the Homepage stuff
     let secret = read_secret();
 
-    let mut filepath = secret.neutrino.clone();
+    let mut filepath = secret.pi_instance.clone();
     filepath.push_str(":");
     filepath.push_str(&secret.hp_path);
 
@@ -177,15 +189,20 @@ pub fn homepage_sorter(saved_entries: Vec<String>) {
         .append(true)
         .open("bookmarks.yaml")
         .expect("can't open file");
+
+    //Add new entries saved from main loop's Vec
     for entry in saved_entries {
         writeln!(&mut appender, "{}", entry).expect("cant write homepage entry");
     }
 
+    //Open bookmarks.yaml for real now and serialize it using a custom struct
     let reader = File::open("bookmarks.yaml").expect("can't open file");
     let buf_reader = BufReader::new(reader);
+    
     let raw_read: Vec<HashMap<String, Vec<HashMap<String, Vec<Port>>>>> =
         yaml_serde::from_reader(buf_reader).expect("can't read file");
 
+    //The yaml file is organized in a weird way... I got this parsing method by trial and error.
     let contents = raw_read
         .first()
         .expect("empty")
@@ -194,6 +211,7 @@ pub fn homepage_sorter(saved_entries: Vec<String>) {
         .expect("contents not found")
         .1;
 
+    //Quickly alphabetizes: A-Z, a-z
     let mut new_mapping: BTreeMap<String, Port> = BTreeMap::new();
 
     for port in contents {
@@ -205,20 +223,23 @@ pub fn homepage_sorter(saved_entries: Vec<String>) {
 
     let mut new_contents = Vec::new();
 
+    //Re-serializing the data
     for port in new_mapping {
         let entry = HashMap::from([(port.0, vec![port.1])]);
         new_contents.push(entry);
     }
-
+    
     let final_write: Vec<HashMap<String, Vec<HashMap<String, Vec<Port>>>>> =
         vec![HashMap::from([("Ports".to_string(), new_contents)])];
 
     let yaml = yaml_serde::to_string(&final_write).expect("can't yaml it");
 
+    //Write it into yaml file 
     let _ = write("bookmarks.yaml", yaml);
 
     let filepath = filepath.split("b").next().expect("filepath empty?");
 
+    //scp the new bookmarks.yaml back to the Pi
     let ssh_handler = Command::new("scp")
         .args(["-i", &secret.key, "bookmarks.yaml", &filepath])
         .spawn()

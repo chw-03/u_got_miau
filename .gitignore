@@ -17,5 +17,5 @@ target
 
 /target
 
-*.json
+secret.json
 *.txt
